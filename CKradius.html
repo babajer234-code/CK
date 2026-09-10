@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Map Radius 1-8 KM - Central Kitchen</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#f4f5f7;color:#172b4d}
+#map{width:100%;height:100%}
+.panel{position:absolute;top:14px;left:14px;z-index:999;background:#fff;border:1px solid #dfe1e6;border-radius:10px;padding:12px 14px;max-width:380px;box-shadow:0 4px 18px rgba(9,30,66,.12)}
+.panel h1{margin:0 0 8px 0;font-size:16px}
+.panel p{margin:0 0 8px 0;font-size:12px;line-height:1.45;color:#44546f}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+label{font-size:12px;font-weight:600;color:#172b4d}
+select{padding:7px 10px;border:1px solid #c1c7d0;border-radius:7px;background:#fff;font-size:12px;font-weight:600;color:#172b4d}
+.badge{display:inline-block;background:#deebff;color:#0747a6;font-size:11px;padding:4px 8px;border-radius:999px;font-weight:600}
+#summary{margin:8px 0 0 18px;padding:0;font-size:12px;line-height:1.4;color:#172b4d;max-height:180px;overflow:auto}
+.note{font-size:11px;color:#6b778c;margin-top:6px}
+@media(max-width:640px){.panel{max-width:calc(100% - 28px)}}
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1>Radius Central Kitchen</h1>
+  <p>Menampilkan 8 titik Central Kitchen. Radius bisa dipilih dari 1 km sampai 8 km.</p>
+  <div class="row">
+    <label for="radiusSelect">Pilih radius</label>
+    <select id="radiusSelect" aria-label="Pilih radius">
+      <option value="1">1 km</option>
+      <option value="2">2 km</option>
+      <option value="3" selected>3 km</option>
+      <option value="4">4 km</option>
+      <option value="5">5 km</option>
+      <option value="6">6 km</option>
+      <option value="7">7 km</option>
+      <option value="8">8 km</option>
+    </select>
+    <span class="badge" id="currentRadius">Radius aktif: 3 km</span>
+  </div>
+  <p>Daftar di bawah menunjukkan titik yang saling bersentuhan atau overlap pada radius terpilih.</p>
+  <ul id="summary"></ul>
+  <div class="note">Aturan cek: dua lingkaran saling bersentuhan atau overlap jika jarak antar pusat ≤ 2 × radius.</div>
+</div>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const points = [{"name": "Central Kitchen Kelapa Gading", "lat": -6.164671351572174, "lng": 106.90636367468878}, {"name": "Central Kitchen Tendean", "lat": -6.240055337684485, "lng": 106.82252100436918}, {"name": "Central Kitchen Tebet", "lat": -6.235610683167779, "lng": 106.84895430856628}, {"name": "Central Kitchen Sudirman", "lat": -6.20647726430428, "lng": 106.81810390537231}, {"name": "Central Kitchen Rawamangun", "lat": -6.202595589957503, "lng": 106.89357917894546}, {"name": "Central Kitchen Meruya", "lat": -6.197343305385243, "lng": 106.75288250803543}, {"name": "Central Kitchen Tanjung Duren", "lat": -6.182075004795331, "lng": 106.78619502976404}, {"name": "Central Kitchen Kemang", "lat": -6.266076256202748, "lng": 106.81003488759754}];
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371.0088;
+  const toRad = deg => deg * Math.PI / 180;
+  const p1 = toRad(lat1);
+  const p2 = toRad(lat2);
+  const dp = toRad(lat2 - lat1);
+  const dl = toRad(lon2 - lon1);
+  const a = Math.sin(dp/2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl/2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+const map = L.map('map');
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const bounds = [];
+const circles = [];
+points.forEach((p) => {
+  const marker = L.marker([p.lat, p.lng]).addTo(map);
+  marker.bindPopup(`<b>${p.name}</b><br>${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`);
+  const circle = L.circle([p.lat, p.lng], {
+    radius: 3000,
+    weight: 2,
+    fillOpacity: 0.14
+  }).addTo(map);
+  circles.push({ point: p, circle });
+  bounds.push([p.lat, p.lng]);
+});
+map.fitBounds(bounds, {padding:[30,30]});
+
+const radiusSelect = document.getElementById('radiusSelect');
+const currentRadius = document.getElementById('currentRadius');
+const summary = document.getElementById('summary');
+
+function updateRadius() {
+  const radiusKm = Number(radiusSelect.value);
+  const radiusMeters = radiusKm * 1000;
+  currentRadius.textContent = `Radius aktif: ${radiusKm} km`;
+
+  circles.forEach(item => {
+    item.circle.setRadius(radiusMeters);
+    item.circle.bindPopup(`<b>${item.point.name}</b><br>${item.point.lat.toFixed(6)}, ${item.point.lng.toFixed(6)}<br>Radius: ${radiusKm} km`);
+  });
+
+  const touching = [];
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      const d = haversine(points[i].lat, points[i].lng, points[j].lat, points[j].lng);
+      if (d <= radiusKm * 2) {
+        touching.push({
+          a: points[i].name,
+          b: points[j].name,
+          d: d.toFixed(2)
+        });
+      }
+    }
+  }
+
+  touching.sort((x,y) => Number(x.d) - Number(y.d));
+  summary.innerHTML = '';
+  if (touching.length === 0) {
+    const li = document.createElement('li');
+    li.textContent = `Tidak ada titik yang bersentuhan atau overlap pada radius ${radiusKm} km.`;
+    summary.appendChild(li);
+  } else {
+    touching.forEach(item => {
+      const li = document.createElement('li');
+      li.textContent = `${item.a} ↔ ${item.b}: ${item.d} km`;
+      summary.appendChild(li);
+    });
+  }
+}
+
+radiusSelect.addEventListener('change', updateRadius);
+updateRadius();
+</script>
+</body>
+</html>
